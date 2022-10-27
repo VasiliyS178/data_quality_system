@@ -1,7 +1,6 @@
 import time
 import psycopg2
 import json
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 import datahub.emitter.mce_builder as builder
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
 from datahub.emitter.rest_emitter import DatahubRestEmitter
@@ -15,24 +14,25 @@ from datahub.metadata.com.linkedin.pegasus2avro.timeseries import PartitionSpec
 
 
 def get_data_via_jdbc(spark_session, connection, sql_query):
-    """
-    Get data from source table via jdbc with Spark
-    :param connection:
-    :param spark_session:
-    :param sql_query:
-    :return: DataFrame
-    """
+    """Get data from source table via jdbc with Spark"""
     if not connection:
         print('Can not get params for JDBC connection')
         return None
-
-    if 'postgres' in connection.conn_type:
+    if connection.conn_id.startswith('pg') or connection.conn_id.startswith('dq'):
         conn_type = 'postgresql'
-        driver = f'org.{conn_type}.Driver'
+        driver = 'org.postgresql.Driver'
+        url = f"jdbc:{conn_type}://{connection.host}:{connection.port}/{connection.schema}"
+    elif connection.conn_id.startswith('mssql'):
+        conn_type = 'sqlserver'
+        driver = 'com.microsoft.sqlserver.jdbc.SQLServerDriver'
+        url = f"jdbc:{conn_type}://{connection.host}:{connection.port};databaseName={connection.schema}"
+    elif connection.conn_id.startswith('mysql'):
+        conn_type = 'mysql'
+        driver = 'com.mysql.cj.jdbc.Driver'
+        url = f"jdbc:{conn_type}://{connection.host}:{connection.port}/{connection.schema}"
     else:
-        print('DQ can connect only to PostgreSQL yet. Please contact to developers')
+        print('DQ System can not connect to the source DB. Please contact to DQ-developers')
         return None
-    url = f"jdbc:{conn_type}://{connection.host}:{connection.port}/{connection.schema}"
     print(url)
     df = spark_session.read \
         .format('jdbc') \
@@ -46,10 +46,7 @@ def get_data_via_jdbc(spark_session, connection, sql_query):
 
 
 def setup_pg_connection(user, password, host, port, database):
-    """
-    Set connection to PostgreSQL database via psycopg2 library
-    :return: connection obj
-    """
+    """Set connection to PostgreSQL database via psycopg2 library"""
     conn = psycopg2.connect(
         user=user,
         password=password,
@@ -59,32 +56,27 @@ def setup_pg_connection(user, password, host, port, database):
     return conn
 
 
-def get_data_from_parquet(spark_session, hdfs_location, sql_query, table_name, datekey=None):
-    """
-    Get data from parquet file with Spark
-    :param spark_session:
-    :param hdfs_location:
-    :param sql_query:
-    :param table_name:
-    :param datekey:
-    :return: DataFrame with data
-    """
-    if datekey:
-        hdfs_location = f"{hdfs_location}/datekey={datekey}"
+def get_data_from_parquet(spark_session, hdfs_location, sql_query, table_name, load_date=None):
+    """Get data from parquet file with Spark"""
+    if load_date:
+        hdfs_location = f"{hdfs_location}/load_date={load_date}"
     try:
         # Check if TempView already exists in local Spark Metastore
         result_df = spark_session.sql(sql_query)
+        count_rows = int(spark_session.sql(f"COUNT(*) FROM {table_name}").collect()[0][0])
     except Exception:
         try:
             target_df = spark_session.read.parquet(hdfs_location)
         except Exception:
             print(f"Can't read data from hdfs:///{hdfs_location}")
-            return None
+            return None, None
         target_df.createOrReplaceTempView(table_name)
+        count_rows = target_df.count()
         spark_session.sql(f"CACHE TABLE {table_name}")
         result_df = spark_session.sql(sql_query)
+    print(f"{count_rows} rows have been read from hdfs:///{hdfs_location}")
     result_df.show()
-    return result_df
+    return result_df, count_rows
 
 
 def get_tests_from_dq_metastore(connection, table_full_name):
@@ -94,11 +86,31 @@ def get_tests_from_dq_metastore(connection, table_full_name):
                                         password=connection.password,
                                         host=connection.host,
                                         port=connection.port)
-
-    target_columns = ['ass.assertion_id', 'ass.table_full_name', 'ass.date_formatter', 'ass.min_value', 'ass.max_value',
-                      'ass.test_name', 'ass.sql_query', 'ass.delay_days', 'ass.is_critical', 'ass.schema_json_expected',
-                      'ass.check_all_rows', 'tst.category', 'tst.scope', 'tst.std_operator', 'tst.std_aggregation',
-                      'ass.check_all_rows', 'ass.test_columns', 'ass.regexp']
+    target_columns = ['ass.assertion_id',
+                      'ass.table_full_name',
+                      'ass.date_formatter',
+                      'ass.min_value',
+                      'ass.max_value',
+                      'ass.test_name',
+                      'ass.sql_query',
+                      'ass.delay_days',
+                      'ass.is_critical',
+                      'ass.schema_json_expected',
+                      'ass.source_table_full_name',
+                      'ass.connection_name',
+                      'ass.check_all_rows',
+                      'ass.check_all_rows',
+                      'ass.test_columns',
+                      'ass.regexp',
+                      'ass.variation_percent',
+                      'ass.averaging_interval',
+                      'ass.reference_column',
+                      'ass.description',
+                      'ass.source_error',
+                      'tst.category',
+                      'tst.scope',
+                      'tst.std_operator',
+                      'tst.std_aggregation']
     sql_get_tests = f"""
         SELECT {', '.join(target_columns)}
         FROM dq_assertions ass  
@@ -107,85 +119,135 @@ def get_tests_from_dq_metastore(connection, table_full_name):
         AND ass.is_active = true        
     """
     cursor = pg_connection.cursor()
-    cursor.execute(sql_get_tests)
-    tests_info = cursor.fetchall()
-    cursor.close()
-
-    # Getting info about source table for the target table
-    sql_get_source_info = f"""
-        SELECT table_full_name, where_condition, connection_name 
-        FROM dq_assertions
-        WHERE table_full_name = (SELECT table_full_name FROM dq_assertions 
-                                 WHERE source_table_full_name = '{table_full_name}')        
-    """
-    cursor = pg_connection.cursor()
-    cursor.execute(sql_get_source_info)
-    source_info = cursor.fetchall()
-    cursor.close()
-
-    # Prepare all params for tests
+    try:
+        cursor.execute(sql_get_tests)
+        tests_info = cursor.fetchall()
+        cursor.close()
+    except Exception as e:
+        cursor.close()
+        pg_connection.close()
+        raise Exception(e)
+    # prepare all params for tests
     tests = []
     if tests_info:
         for row in tests_info:
             test = dict()
             for i, value in enumerate(row):
-                test[target_columns[i][4:]] = value
-            # Form HDFS path for table from: /environment/db_name/schema_name/table_name/
-            test['hdfs_location'] = f"/{row[1].replace('.', '/')}"
-            if source_info:
-                test['source_schema_name'] = source_info[0][0].split('.')[-2]
-                test['source_table_name'] = source_info[0][0].split('.')[-1]
-                test['source_where_condition'] = source_info[0][1]
-                test['source_connection_name'] = source_info[0][2]
-                test['source_hdfs_location'] = \
-                    f"/{source_info[0][0].replace('.', '/')}"
+                test[target_columns[i][4:]] = value  # remove prefixes
+            test['hdfs_location'] = f"/{test['table_full_name'].replace('.', '/')}"
+            test['table_name'] = test['table_full_name'].split('.')[-1]
+            if test['source_table_full_name']:
+                test['source_schema_name'] = test['source_table_full_name'].split('.')[2]
+                test['source_table_name'] = test['source_table_full_name'].split('.')[-1]
+                test['source_hdfs_location'] = f"/{test['source_table_full_name'].replace('.', '/')}"
             tests.append(test)
-    pg_connection.close()
     return tests
 
 
-def save_results_to_hdfs(spark_session, data, path, count_rows=10, write_mode='append'):
+def get_metrics_from_dq_metastore(connection, table_full_name):
+    """Get metrics list for target table"""
+    pg_connection = setup_pg_connection(database=connection.schema,
+                                        user=connection.login,
+                                        password=connection.password,
+                                        host=connection.host,
+                                        port=connection.port)
+    target_columns = ['prf.profiling_id',
+                      'prf.metric_name',
+                      'prf.table_full_name',
+                      'prf.is_source',
+                      'prf.deduplication_column',
+                      'prf.test_columns',
+                      'prf.delay_days',
+                      'prf.where_condition',
+                      'prf.connection_name',
+                      'prf.is_incremental']
+    sql_query = f"""
+        SELECT {', '.join(target_columns)}
+        FROM dq_profiling prf  
+        WHERE prf.table_full_name = '{table_full_name}'
+        AND prf.is_active = true        
     """
-    Write results from List to HDFS as csv-file
-    :param count_rows:
-    :param data:
-    :param spark_session:
-    :param path:
-    :param write_mode:
-    :return: None
-    """
-    schema = StructType([StructField("assertion_id", StringType(), True),
-                         StructField("test_name", StringType(), True),
-                         StructField("table_full_name", StringType(), True),
-                         StructField("column", StringType(), True),
-                         StructField("is_critical", StringType(), True),
-                         StructField("check_date", StringType(), True),
-                         StructField("log_time", StringType(), True),
-                         StructField("error", StringType(), True),
-                         StructField("test_passed", StringType(), True),
-                         StructField("sql_query", StringType(), True),
-                         StructField("datekey", StringType(), True)
-                         ])
+    cursor = pg_connection.cursor()
+    try:
+        cursor.execute(sql_query)
+        metrics_info = cursor.fetchall()
+        cursor.close()
+        pg_connection.close()
+    except Exception as e:
+        cursor.close()
+        pg_connection.close()
+        raise Exception(e)
+    # Prepare all params for metrics
+    metrics = []
+    if metrics_info:
+        for row in metrics_info:
+            metric = dict()
+            for i, value in enumerate(row):
+                metric[target_columns[i][4:]] = value
+            metric['hdfs_location'] = f"/{metric['table_full_name'].replace('.', '/')}"
+            metrics.append(metric)
+    return metrics
 
+
+def get_count_rows_from_pg(connection, schema):
+    """Get count rows from target db and schema in PostgreSQL"""
+    pg_connection = setup_pg_connection(database=connection.schema,
+                                        user=connection.login,
+                                        password=connection.password,
+                                        host=connection.host,
+                                        port=connection.port)
+    sql = f"""
+       select '{connection.schema}' as db_name, table_schema as schema_name, table_name, 
+              (xpath('/row/cnt/text()', xml_count))[1]::text::int as row_count
+       from (select table_name, 
+             table_schema, 
+             query_to_xml(format('select count(*) as cnt from %I.%I', table_schema, table_name), false, true, '') as xml_count
+             from information_schema.tables
+             where table_schema = '{schema}'
+            ) t        
+    """
+    cursor = pg_connection.cursor()
+    try:
+        cursor.execute(sql)
+        metrics_info = cursor.fetchall()
+        cursor.close()
+        pg_connection.close()
+    except Exception as e:
+        cursor.close()
+        pg_connection.close()
+        raise Exception(e)
+    # Prepare all params for metrics
+    metrics = []
+    if metrics_info:
+        for row in metrics_info:
+            metric = dict()
+            metric['table_full_name'] = f'{row[0]}.{row[1]}.{row[2]}'
+            metric['metric_value'] = int(row[3])
+            metrics.append(metric)
+    return metrics
+
+
+def save_results_to_hdfs(spark_session, data, path, schema, count_rows=10, write_mode='append'):
+    """Write results from List to HDFS"""
     result_df = spark_session.createDataFrame(data=data, schema=schema)
     result_df.show(count_rows, False)
     result_df.coalesce(1) \
         .write.format("parquet") \
         .mode(write_mode) \
-        .partitionBy("datekey") \
+        .partitionBy("load_date") \
         .save(path)
-    print(f'DQ tests results have been saved to: {path}')
+    print(f'Results have been saved to: {path}')
     return result_df
 
 
 def create_hive_table(spark, source_df, data_path, database, table_name):
     f_def = ""
     for f in source_df.dtypes:
-        if f[0] != "datekey":
+        if f[0] != "load_date":
             f_def = f_def + ", " + f[0] + " " + \
                     f[1].replace(":", "`:").replace("<", "<`").replace(",", ",`").replace("array<`", "array<")
     table_define = "CREATE EXTERNAL TABLE IF NOT EXISTS " + database + "." + table_name + \
-        " (" + f_def[1:] + ") " + "PARTITIONED BY (datekey string) STORED AS PARQUET " \
+        " (" + f_def[1:] + ") " + "PARTITIONED BY (load_date string) STORED AS PARQUET " \
         "LOCATION 'hdfs://hacluster/" + data_path + "'"
     print(table_define)
     spark.sql(table_define)
@@ -210,7 +272,7 @@ def emit_assertion_run_event(datahub_gms_server, log_time, assertion_id, column_
     runtime_context = {'sql_query': str(sql_query)}
     status = 'SUCCESS' if status or status is None else 'FAILURE'
     check_date = check_date.replace('-', '')
-    partition_spec = PartitionSpec(partition=json.dumps([{"datekey": check_date}])) if not check_all_rows else None
+    partition_spec = PartitionSpec(partition=json.dumps([{"load_date": check_date}])) if not check_all_rows else None
     log_time_msec = time.mktime(time.strptime(log_time, "%Y-%m-%d %H:%M:%S")) * 1000
     env = table_full_name_with_env[:table_full_name_with_env.index('.')]
     table_full_name = table_full_name_with_env[table_full_name_with_env.index('.') + 1:]

@@ -4,6 +4,8 @@
     "APP_NAME": "DQ_TEST",
     "TARGET_HIVE_DB": "t_source",
     "TARGET_TABLE": "dq_results",
+    "METRICS_HDFS_PATH": "/dq/metrics",
+    "METRICS_HIVE_TABLE": "dq_metrics",
     "DATAHUB_GMS_SERVER": "http://0.0.0.0:8080",
     "PLATFORM_NAME": "hdfs"
 }
