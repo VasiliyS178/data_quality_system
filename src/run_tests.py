@@ -42,7 +42,7 @@ def main():
         dq_test.check_date = str((dt.strptime(EXECUTION_DATE, '%Y-%m-%d') -
                                   timedelta(days=int(test.get('delay_days')))).date())
         dq_test.load_date = LOAD_DATE
-        dq_test.filter_datekey = None if dq_test.check_all_rows else dq_test.check_date.replace('-', '')
+        dq_test.filter_date_load = None if dq_test.check_all_rows else dq_test.check_date.replace('-', '')
         dq_test.metrics_table = METRICS_HIVE_TABLE
         dq_test.metrics_hdfs_path = METRICS_HDFS_PATH
         dq_test.schema_name = TABLE_FULL_NAME.split('.')[2]

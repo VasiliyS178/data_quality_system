@@ -69,6 +69,7 @@ for table in all_table_full_names:
         --conf spark.sql.sources.partitionOverwriteMode=dynamic \
         --conf spark.pyspark.virtualenv.enabled=true \
         --conf spark.pyspark.virtualenv.type=native \
+        --jars {LIBS_PATH}/postgresql-42.3.6.jar \
         --conf spark.pyspark.python={VENV_PATH}datahub_venv/bin/python3.9 \
         --conf spark.pyspark.virtualenv.bin.path={VENV_PATH}datahub_venv/bin/ \
         {SCRIPTS_PATH}/{RUN_TESTS_SCRIPT} {table}" + " {{ logical_date }}",

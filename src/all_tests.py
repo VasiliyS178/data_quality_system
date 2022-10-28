@@ -20,7 +20,7 @@ class DQTest:
         self.date_formatter = None
         self.description = None
         self.error = None
-        self.filter_datekey = None
+        self.filter_date_load = None
         self.hdfs_location = None
         self.is_critical = None
         self.log_time = None
@@ -67,7 +67,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         self.sql_query = sql_query
         try:
             self.count_rows_with_errors = result_df.collect()[0][0]
@@ -91,7 +91,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         self.sql_query = sql_query
         self.count_rows_with_errors = result_df.collect()[0][0] if result_df else None
         self.status = not bool(result_df.collect()[0][0]) if result_df else None
@@ -139,7 +139,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         self.sql_query = sql_query
         self.count_rows_with_errors = result_df.collect()[0][0] if result_df else None
         self.status = not bool(result_df.collect()[0][0]) if result_df else None
@@ -170,7 +170,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         self.sql_query = sql_query
         self.count_rows_with_errors = result_df.collect()[0][0] if result_df else None
         self.status = not bool(result_df.collect()[0][0]) if result_df else None
@@ -200,7 +200,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         self.sql_query = sql_query
         self.count_rows_with_errors = result_df.collect()[0][0] if result_df else None
         self.status = not bool(result_df.collect()[0][0]) if result_df else None
@@ -220,7 +220,7 @@ class DQTest:
                                                 hdfs_location=reference_hdfs_location,
                                                 sql_query=reference_sql_query,
                                                 table_name=reference_table_name,
-                                                load_date=self.filter_datekey)
+                                                load_date=self.filter_date_load)
         # get data from target table
         target_sql_query = f"""
             SELECT DISTINCT {self.column_name}
@@ -232,7 +232,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=target_sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         test_sql = f"""
             SELECT COUNT(rt.{self.reference_column})
             FROM {self.table_name} tt
@@ -258,7 +258,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query_prepared,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         try:
             self.count_rows_with_errors = result_df.collect()[0][0]
             self.status = False if self.count_rows_with_errors else True
@@ -299,7 +299,7 @@ class DQTest:
                                                            hdfs_location=self.hdfs_location,
                                                            sql_query=sql_query,
                                                            table_name=self.table_name,
-                                                           load_date=self.filter_datekey)
+                                                           load_date=self.filter_date_load)
         self.sql_query = sql_query
         collected_df = result_df.collect() if result_df else []
         if collected_df:
