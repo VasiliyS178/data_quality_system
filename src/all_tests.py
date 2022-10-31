@@ -313,7 +313,7 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.source_table_full_name}'
             AND metric_name LIKE 'count_rows_in_source_table%'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1 
         """
         print('source_sql_query:\n', source_sql_query)
@@ -335,7 +335,8 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_rows_in_target_table'
-            ORDER BY check_date, log_time DESC
+            AND check_date = '{source_check_date}'
+            ORDER BY log_time DESC
             LIMIT 1       
         """
         print('target_sql_query:\n', target_sql_query)
@@ -353,10 +354,6 @@ class DQTest:
             print("There are no metric values in the metrics table for this test. Test skipped\n")
             return
         self.count_rows = source_count_rows
-
-        if source_check_date != target_check_date:
-            print("check_date in the source is not the same as in the target table. Test skipped\n")
-            return
 
         if source_count_rows == 0:
             if target_count_rows == 0:
@@ -376,7 +373,7 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.source_table_full_name}'
             AND metric_name == 'count_sum_by_column_in_source_table'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1 
         """
         print('source_sql_query:\n', source_sql_query)
@@ -398,7 +395,8 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_sum_by_column_in_target_table'
-            ORDER BY check_date, log_time DESC
+            AND check_date = '{source_check_date}'
+            ORDER BY log_time DESC
             LIMIT 1       
         """
         print('target_sql_query:\n', target_sql_query)
@@ -414,10 +412,6 @@ class DQTest:
             print("check_date: ", collected_source[0]['check_date'])
         else:
             print("There are no metric values in the metrics table for this test. Test skipped\n")
-            return
-
-        if source_check_date != target_check_date:
-            print("check_date in the source is not the same as in the target table. Test skipped\n")
             return
 
         if source_sum_value == 0:
@@ -437,7 +431,7 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.source_table_full_name}'
             AND metric_name == 'count_min_by_column_in_source_table'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1 
         """
         print('source_sql_query:\n', source_sql_query)
@@ -459,7 +453,8 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_min_by_column_in_target_table'
-            ORDER BY check_date, log_time DESC
+            AND check_date = '{source_check_date}'
+            ORDER BY log_time DESC
             LIMIT 1       
         """
         print('target_sql_query:\n', target_sql_query)
@@ -475,10 +470,6 @@ class DQTest:
             print("check_date: ", collected_source[0]['check_date'])
         else:
             print("There are no metric values in the metrics table for this test. Test skipped\n")
-            return
-
-        if source_check_date != target_check_date:
-            print("check_date in the source is not the same as in the target table. Test skipped\n")
             return
 
         if source_min_value == 0:
@@ -498,7 +489,7 @@ class DQTest:
             FROM {self.metrics_table}
             WHERE table_full_name = '{self.source_table_full_name}'
             AND metric_name == 'count_min_by_column_in_source_table'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1 
         """
         print('source_sql_query:\n', source_sql_query)
@@ -520,7 +511,8 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_min_by_column_in_target_table'
-            ORDER BY check_date, log_time DESC
+            AND check_date = '{source_check_date}'
+            ORDER BY log_time DESC
             LIMIT 1       
         """
         print('target_sql_query:\n', target_sql_query)
@@ -536,10 +528,6 @@ class DQTest:
             print("check_date: ", collected_source[0]['check_date'])
         else:
             print("There are no metric values in the metrics table for this test. Test skipped\n")
-            return
-
-        if source_check_date != target_check_date:
-            print("check_date in the source is not the same as in the target table. Test skipped\n")
             return
 
         if source_max_value == 0:
@@ -559,7 +547,7 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_rows_in_target_table'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1       
         """
         print('count_sql_query:\n', count_sql_query)
@@ -601,7 +589,7 @@ class DQTest:
             self.status = True
             self.count_rows_with_errors = 0
         else:
-            difference = avg_count_rows - last_count_rows
+            difference = int(round(avg_count_rows - last_count_rows, 0))
             self.status = \
                 abs(round(difference / float(avg_count_rows) * 100, 2)) <= self.variation_percent
             self.count_rows_with_errors = 0 if self.status else difference
@@ -613,7 +601,7 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_null_values_by_column_in_target_table'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1       
         """
         print('count_sql_query:\n', count_sql_query)
@@ -650,11 +638,11 @@ class DQTest:
         print("avg_count_nulls: ", avg_count_nulls)
         print("last_count_nulls: ", last_count_nulls)
         print("variation_percent: ", self.variation_percent)
-        if avg_count_nulls == 0:
+        if avg_count_nulls == 0 or last_count_nulls == 0:
             self.status = True
             self.count_rows_with_errors = 0
         else:
-            difference = avg_count_nulls - last_count_nulls
+            difference = int(round(avg_count_nulls - last_count_nulls, 0))
             self.status = \
                 abs(round(difference / float(avg_count_nulls) * 100, 2)) <= self.variation_percent
             self.count_rows_with_errors = 0 if self.status else difference
@@ -666,7 +654,7 @@ class DQTest:
             FROM {self.metrics_table}     
             WHERE table_full_name = '{self.table_full_name}'
             AND metric_name = 'count_sum_by_column_in_target_table'
-            ORDER BY check_date, log_time DESC
+            ORDER BY check_date DESC, log_time DESC
             LIMIT 1       
         """
         print('sum_sql_query:\n', sum_sql_query)
